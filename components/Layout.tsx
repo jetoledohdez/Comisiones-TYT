@@ -1,6 +1,6 @@
 import React from 'react';
 import { User, UserRole } from '../types';
-import { LayoutDashboard, Settings, LogOut, FileText } from 'lucide-react';
+import { LayoutDashboard, Settings, LogOut, FileText, Sun, Moon } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -8,13 +8,17 @@ interface LayoutProps {
   onLogout: () => void;
   currentView: 'dashboard' | 'admin' | 'reports';
   onChangeView: (view: 'dashboard' | 'admin' | 'reports') => void;
+  isDarkMode: boolean;
+  toggleTheme: () => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, currentView, onChangeView }) => {
+export const Layout: React.FC<LayoutProps> = ({ 
+  children, user, onLogout, currentView, onChangeView, isDarkMode, toggleTheme 
+}) => {
   return (
-    <div className="min-h-screen flex bg-gray-50 text-gray-900 font-sans">
-      {/* Sidebar - T&T Industrial Style */}
-      <aside className="w-64 bg-[#1A1A1A] text-white flex flex-col shadow-2xl z-10 shrink-0 h-screen sticky top-0">
+    <div className={`min-h-screen flex transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'} font-sans`}>
+      {/* Sidebar */}
+      <aside className={`w-64 flex flex-col shadow-2xl z-10 shrink-0 h-screen sticky top-0 transition-colors ${isDarkMode ? 'bg-black border-r border-gray-800' : 'bg-[#1A1A1A] text-white'}`}>
         <div className="h-20 flex items-center justify-center border-b border-gray-800 bg-[#FFB800]">
            <h1 className="text-2xl font-black tracking-tighter text-black">
              T&T <span className="font-light">HUB</span>
@@ -29,7 +33,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, curren
               className="w-10 h-10 rounded-full border-2 border-[#FFB800]"
             />
             <div>
-              <p className="text-sm font-bold text-gray-100">{user.name}</p>
+              <p className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-100'}`}>{user.name}</p>
               <p className="text-xs text-gray-400">{user.role}</p>
             </div>
           </div>
@@ -88,17 +92,26 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, curren
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto h-screen">
-        <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 sticky top-0 z-20 shadow-sm">
-          <h2 className="text-2xl font-bold text-[#003366]">
+        <header className={`h-20 border-b flex items-center justify-between px-8 sticky top-0 z-20 shadow-sm transition-colors ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+          <h2 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-[#003366]'}`}>
             {currentView === 'dashboard' && 'Tablero de Control'}
             {currentView === 'admin' && 'Panel de Administración'}
             {currentView === 'reports' && 'Centro de Reportes'}
           </h2>
           <div className="flex items-center space-x-4">
-            <span className="px-3 py-1 rounded-full bg-green-100 text-green-800 text-xs font-bold border border-green-200">
+             {/* Theme Toggle */}
+            <button 
+              onClick={toggleTheme}
+              className={`p-2 rounded-full transition-colors ${isDarkMode ? 'bg-gray-700 text-[#FFB800]' : 'bg-gray-100 text-gray-600'}`}
+              title="Cambiar Modo"
+            >
+              {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+
+            <span className={`px-3 py-1 rounded-full text-xs font-bold border ${isDarkMode ? 'bg-green-900 text-green-200 border-green-800' : 'bg-green-100 text-green-800 border-green-200'}`}>
               SAP CONNECTED
             </span>
-            <span className="text-sm text-gray-500">
+            <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
               {new Date().toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </span>
           </div>

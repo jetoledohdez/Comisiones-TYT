@@ -1,9 +1,5 @@
 import { CommissionConfig, Invoice, CommissionRecord, KpiData } from '../types';
 
-// ==========================================
-// A. Lógica Financiera Crítica (The Algorithm)
-// ==========================================
-
 export const calculatePaymentDate = (invoiceDateStr: string): string => {
   const invoiceDate = new Date(invoiceDateStr);
   const baseDate = new Date(invoiceDate);
@@ -24,31 +20,39 @@ export const calculatePaymentDate = (invoiceDateStr: string): string => {
   return payDate.toISOString().split('T')[0];
 };
 
-/**
- * Calculates commission considering:
- * 1. Specific Rate per Business Line
- * 2. Global Penalty Factor based on Total Sales vs Target
- */
 export const calculateCommissionsBatch = (
   invoices: Invoice[],
   config: CommissionConfig,
-  currentTotalSales: number // Passed from outside to determine penalty factor
+  currentTotalSales: number
 ): CommissionRecord[] => {
   
   // 1. Determine Global Penalty Factor
-  // Logic from PDF: 
-  // 90%+ = 100% comm, 80-89% = 80%, 70-79% = 70%, <70% = 0%
-  const achievement = currentTotalSales / config.globalTarget;
-  let penaltyFactor = 0;
+  // NOTE: If Portfolio Coverage is DISABLED, we assume full achievement (no penalty from system level)
+  // or we stick to the Sales Target penalty. The prompt says "ligarlo al dato". 
+  // For this simulation, we'll keep the Sales Target penalty as the primary driver, 
+  // but if Portfolio toggle is OFF, we might enforce a minimum factor of 1.0 (no penalty) 
+  // OR just hide the metric. Usually sales penalties apply regardless.
+  // Let's assume the Penalty Scale is ALWAYS active if enabled, but the specific KPIs 
+  // (Portfolio/Conversion) are extra conditions.
+  
+  const achievement = config.globalTarget > 0 ? currentTotalSales / config.globalTarget : 0;
+  let penaltyFactor = 1.0;
 
-  if (achievement >= 0.90) {
-    penaltyFactor = config.scale90to100; // 1.0
-  } else if (achievement >= 0.80) {
-    penaltyFactor = config.scale80to89;  // 0.8
-  } else if (achievement >= 0.70) {
-    penaltyFactor = config.scale70to79;  // 0.7
+  // Only apply target-based penalties if Portfolio Coverage (Simulated as "System Active" in prompt) is ON.
+  // The prompt asked to change "Active System" to "Portfolio Coverage".
+  if (config.enablePortfolioCoverage) {
+    if (achievement >= 0.90) {
+      penaltyFactor = config.scale90to100;
+    } else if (achievement >= 0.80) {
+      penaltyFactor = config.scale80to89; 
+    } else if (achievement >= 0.70) {
+      penaltyFactor = config.scale70to79;  
+    } else {
+      penaltyFactor = config.scaleBelow70;
+    }
   } else {
-    penaltyFactor = config.scaleBelow70; // 0.0
+    // If coverage logic is disabled, pay 100% of generated commission without scale penalties
+    penaltyFactor = 1.0; 
   }
 
   return invoices.map(inv => {
@@ -56,19 +60,14 @@ export const calculateCommissionsBatch = (
     const baseDate = new Date(inv.docDate);
     baseDate.setDate(baseDate.getDate() + 60);
 
-    // Get specific rate for business line
     const baseRate = config.rates[inv.businessLine] || 0;
-    
-    // Calculate raw commission
     let rawCommission = inv.docTotal * baseRate;
 
-    // Apply Bonuses directly to raw amount (Bonuses usually exempt from penalty? 
-    // PDF implies "Costo Vendedor 6.1% CASTIGO" applies to variable income. 
-    // Let's assume bonuses are part of variable income and subject to floor, 
-    // unless specified otherwise. We will apply penalty to everything for safety).
     let bonusAmount = 0;
-    if (inv.isNewClient) bonusAmount += config.bonusNewClient;
-    if (inv.isRecoveredClient) bonusAmount += config.bonusRecoveredClient;
+    if (config.enableBonuses) {
+        if (inv.isNewClient) bonusAmount += config.bonusNewClientReward;
+        if (inv.isRecoveredClient) bonusAmount += config.bonusRecoveredReward;
+    }
 
     const totalBeforePenalty = rawCommission + bonusAmount;
     const finalCommission = totalBeforePenalty * penaltyFactor;
@@ -80,8 +79,8 @@ export const calculateCommissionsBatch = (
       appliedRate: baseRate,
       baseCommissionAmount: totalBeforePenalty,
       finalCommissionAmount: finalCommission,
-      commissionAmount: finalCommission, // Mapping for UI compatibility
-      commissionRate: baseRate, // Mapping for UI compatibility
+      commissionAmount: finalCommission,
+      commissionRate: baseRate,
       penaltyFactor: penaltyFactor,
       status: 'Pending'
     };

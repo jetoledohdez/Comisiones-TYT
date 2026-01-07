@@ -29,28 +29,54 @@ const generateRandomDate = (year: number, month: number) => {
 };
 
 export const getMockInvoices = (month: number, year: number): Invoice[] => {
-  // Generate ~40 invoices for the selected month to distribute among reps
-  return Array.from({ length: 40 }).map((_, i) => {
+  // SCENARIO LOGIC:
+  // Months 1, 2, 3, 4: High Performance (Overachievers + Bonuses)
+  // Months 5, 6, 7, 8: On Target (100% - 110%)
+  // Months 9, 10: Partial Penalty (80% - 90%)
+  // Months 11, 12: Failure (< 70%)
+  
+  let performanceMultiplier = 1.0;
+  let bonusChance = 0.05;
+
+  if ([1, 2, 3, 4].includes(month)) {
+    performanceMultiplier = 1.5; // Way above target
+    bonusChance = 0.4; // High chance of new clients
+  } else if ([5, 6, 7, 8].includes(month)) {
+    performanceMultiplier = 1.05; // Just right
+    bonusChance = 0.1;
+  } else if ([9, 10].includes(month)) {
+    performanceMultiplier = 0.85; // Penalty zone
+    bonusChance = 0.0;
+  } else {
+    performanceMultiplier = 0.5; // Failure zone
+    bonusChance = 0.0;
+  }
+
+  const baseCount = Math.floor(35 * performanceMultiplier);
+
+  return Array.from({ length: baseCount }).map((_, i) => {
     const rep = MOCK_HIERARCHY.reps[Math.floor(Math.random() * MOCK_HIERARCHY.reps.length)];
     const manager = MOCK_HIERARCHY.managers.find(m => m.id === rep.managerId);
     const line = BUSINESS_LINES[Math.floor(Math.random() * BUSINESS_LINES.length)];
     
-    // Higher values for 'Proyectos' and 'Ventas', lower for 'Mantenimiento'
-    let baseAmount = 5000;
-    if (line === 'Ventas') baseAmount = 50000;
-    if (line === 'Proyectos') baseAmount = 150000;
-    if (line === 'Renta') baseAmount = 25000;
+    let baseAmount = 10000;
+    if (line === 'Ventas') baseAmount = 45000;
+    if (line === 'Proyectos') baseAmount = 120000;
+    if (line === 'Renta') baseAmount = 20000;
+
+    // Add randomness to amounts
+    const amount = (baseAmount * 0.5) + (Math.random() * baseAmount);
 
     return {
-      docNum: 100020 + i,
+      docNum: 100020 + i + (month * 100),
       customerName: CUSTOMERS[Math.floor(Math.random() * CUSTOMERS.length)],
       docDate: generateRandomDate(year, month),
-      docTotal: Math.floor(Math.random() * baseAmount) + 5000,
+      docTotal: Math.floor(amount),
       currency: 'MXN',
       isPaid: Math.random() > 0.2,
       itemGroupCode: 100,
-      isNewClient: Math.random() > 0.9, // 10% chance
-      isRecoveredClient: Math.random() > 0.95, // 5% chance
+      isNewClient: Math.random() < bonusChance, 
+      isRecoveredClient: Math.random() < (bonusChance / 2),
       businessLine: line,
       salesRepId: rep.id,
       salesRepName: rep.name,
@@ -65,9 +91,6 @@ export const getMonthlyHistory = (): MonthlyHistory[] => {
     { month: 'Junio', year: 2024, commissionEarned: 25400, payoutDate: '2024-08-15' },
     { month: 'Mayo', year: 2024, commissionEarned: 18200, payoutDate: '2024-07-15' },
     { month: 'Abril', year: 2024, commissionEarned: 21000, payoutDate: '2024-06-15' },
-    { month: 'Marzo', year: 2024, commissionEarned: 19500, payoutDate: '2024-05-15' },
-    { month: 'Febrero', year: 2024, commissionEarned: 28000, payoutDate: '2024-04-15' },
-    { month: 'Enero', year: 2024, commissionEarned: 22100, payoutDate: '2024-03-15' },
   ];
 };
 

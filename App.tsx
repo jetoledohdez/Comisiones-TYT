@@ -18,21 +18,29 @@ const INITIAL_USER: User = {
 
 // Initial Config based on PDF
 const INITIAL_CONFIG: CommissionConfig = {
+  enablePortfolioCoverage: true,
+  enableConversionRate: true,
+  enableBonuses: true,
+
   globalTarget: 700000,
   floorPercentage: 70,
-  scale90to100: 1.0, // 100%
-  scale80to89: 0.80, // 80%
-  scale70to79: 0.70, // 70%
-  scaleBelow70: 0.0, // 0%
+  overFloorPercentage: 110, // Default Stretch
+  scale90to100: 1.0, 
+  scale80to89: 0.80, 
+  scale70to79: 0.70, 
+  scaleBelow70: 0.0, 
+
+  minPortfolioCoverage: 90,
+  minConversionRate: 40,
   
   rates: {
-    'Ventas': 0.015,         // 1.50%
-    'Renta': 0.02,           // 2.00%
-    'Mantenimiento': 0.015,  // 1.50%
-    'Calibración': 0.015,    // 1.50%
-    'Capacitación': 0.10,    // 10.00%
-    'Supervisión': 0.03,     // 3.00%
-    'Proyectos': 0.03,       // 3.00%
+    'Ventas': 0.015,         
+    'Renta': 0.02,           
+    'Mantenimiento': 0.015,  
+    'Calibración': 0.015,    
+    'Capacitación': 0.10,    
+    'Supervisión': 0.03,     
+    'Proyectos': 0.03,       
     'Otros': 0.00
   },
   
@@ -47,9 +55,12 @@ const INITIAL_CONFIG: CommissionConfig = {
     'Otros': 0
   },
 
-  bonusNewClient: 500,
-  bonusRecoveredClient: 500,
-  bonusGoalNewClients: 1500
+  bonusNewClientTarget: 1,
+  bonusNewClientReward: 500,
+  bonusRecoveredTarget: 1,
+  bonusRecoveredReward: 500,
+  bonusGoalNewClientsTarget: 5,
+  bonusGoalNewClientsReward: 1500
 };
 
 const App: React.FC = () => {
@@ -57,6 +68,7 @@ const App: React.FC = () => {
   const [config, setConfig] = useState<CommissionConfig>(INITIAL_CONFIG);
   const [currentView, setCurrentView] = useState<'dashboard' | 'admin' | 'reports'>('dashboard');
   const [loading, setLoading] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setLoading(false), 1000);
@@ -72,26 +84,18 @@ const App: React.FC = () => {
     setConfig(newConfig);
   };
 
-  // Logic to simulate role switching with valid hierarchy IDs
   const toggleRole = () => {
     let nextUser = { ...user };
-
     if (user.role === UserRole.DIRECTOR) {
-      // Switch to Rep (Juan)
       const rep = MOCK_HIERARCHY.reps[0];
       nextUser = { ...rep, role: UserRole.SALES_REP, email: 'juan@t-t.com', avatar: 'https://picsum.photos/201' };
     } else if (user.role === UserRole.SALES_REP) {
-      // Switch to Manager (Laura)
       const mgr = MOCK_HIERARCHY.managers[0];
       nextUser = { ...mgr, role: UserRole.MANAGER, email: 'laura@t-t.com', avatar: 'https://picsum.photos/202' };
     } else {
-      // Switch back to Director
       nextUser = INITIAL_USER;
     }
-
     setUser(nextUser);
-    
-    // Safety check for view access
     if (nextUser.role !== UserRole.DIRECTOR && currentView === 'admin') {
       setCurrentView('dashboard');
     }
@@ -114,9 +118,11 @@ const App: React.FC = () => {
         onLogout={handleLogout}
         currentView={currentView}
         onChangeView={setCurrentView}
+        isDarkMode={isDarkMode}
+        toggleTheme={() => setIsDarkMode(!isDarkMode)}
       >
         {currentView === 'dashboard' && (
-          <Dashboard user={user} config={config} />
+          <Dashboard user={user} config={config} isDarkMode={isDarkMode} />
         )}
         {currentView === 'admin' && (
           <AdminPanel config={config} onUpdateConfig={handleUpdateConfig} />
@@ -126,7 +132,7 @@ const App: React.FC = () => {
         )}
       </Layout>
       
-      {/* Demo Controller Floating Button */}
+      {/* Demo Controller */}
       <div className="fixed bottom-4 right-4 z-50">
         <button 
           onClick={toggleRole}

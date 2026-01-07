@@ -24,28 +24,40 @@ export type BusinessLine =
   | 'Proyectos' 
   | 'Otros';
 
-// Configuration now supports specific values, not just booleans
 export interface CommissionConfig {
-  // Global Rules
-  globalTarget: number; // $700,000 example
-  floorPercentage: number; // 70%
-  
-  // Penalties / Scales (Percentage of commission paid based on achievement)
-  scale90to100: number; // 100%
-  scale80to89: number;  // 80%
-  scale70to79: number;  // 70%
-  scaleBelow70: number; // 0%
+  // Logic Toggles (Renamed)
+  enablePortfolioCoverage: boolean; // Was isActive
+  enableConversionRate: boolean;    // Was enablePenalties
+  enableBonuses: boolean;
 
-  // Business Line Commission Rates (decimal, e.g., 0.015 for 1.5%)
-  rates: Record<BusinessLine, number>;
+  // Global Rules
+  globalTarget: number; 
+  floorPercentage: number; 
+  overFloorPercentage: number; // New: Sobre Piso
   
-  // Business Line Targets (Specific targets per line if needed, otherwise global)
+  // Penalties / Scales 
+  scale90to100: number; 
+  scale80to89: number;  
+  scale70to79: number;  
+  scaleBelow70: number; 
+
+  // Specific Targets
+  minPortfolioCoverage: number; // Target % e.g. 90
+  minConversionRate: number;    // Target % e.g. 40
+
+  // Business Line Commission Rates & Targets
+  rates: Record<BusinessLine, number>;
   lineTargets: Record<BusinessLine, number>;
 
-  // Bonuses
-  bonusNewClient: number;      // $500
-  bonusRecoveredClient: number; // $500
-  bonusGoalNewClients: number; // $1500 for 5 clients
+  // Bonuses Configuration (Value and Reward)
+  bonusNewClientTarget: number; // e.g. 1 client
+  bonusNewClientReward: number; // e.g. $500
+  
+  bonusRecoveredTarget: number; // e.g. 1 client
+  bonusRecoveredReward: number; // e.g. $500
+  
+  bonusGoalNewClientsTarget: number; // e.g. 5 clients
+  bonusGoalNewClientsReward: number; // e.g. $1500
 }
 
 export interface Invoice {
