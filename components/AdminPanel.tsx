@@ -1,7 +1,50 @@
 import React, { useState, useEffect } from 'react';
 import { CommissionConfig, BusinessLine, FinancialScaleRow, CoverageScaleRow } from '../types';
 import { MOCK_HIERARCHY } from '../services/mockSapService';
-import { Save, ToggleLeft, ToggleRight, User, Target, TrendingUp, TrendingDown, Shield, Award } from 'lucide-react';
+import { Save, ToggleLeft, ToggleRight, User, Target, TrendingUp, TrendingDown, Shield, Award, Briefcase } from 'lucide-react';
+
+// --- HELPER COMPONENTS (Moved outside to prevent re-render focus loss) ---
+
+const InputCurrency = ({ value, onChange, readOnly = false }: any) => (
+  <div className="relative">
+    <span className="absolute left-2 top-2 text-gray-500 font-bold text-xs">$</span>
+    <input 
+      type="number" 
+      readOnly={readOnly}
+      className={`w-full border rounded pl-6 pr-2 py-1 text-sm font-mono ${readOnly ? 'bg-gray-100 text-gray-700 cursor-not-allowed' : 'bg-white text-black border-gray-300 focus:ring-2 focus:ring-[#FFB800]'}`}
+      value={value || ''}
+      onChange={e => onChange && onChange(e.target.value === '' ? 0 : parseFloat(e.target.value))}
+    />
+  </div>
+);
+
+const InputPercent = ({ value, onChange, readOnly = false, maxLimit }: any) => (
+  <div className="relative">
+    <input 
+      type="number" 
+      readOnly={readOnly}
+      max={maxLimit}
+      className={`w-full border rounded pl-2 pr-6 py-1 text-sm text-center font-bold ${readOnly ? 'bg-gray-100 text-gray-700 cursor-not-allowed' : 'bg-white text-black border-gray-300 focus:ring-2 focus:ring-[#FFB800]'}`}
+      value={value}
+      onChange={e => {
+        const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+        if (maxLimit !== undefined && val > maxLimit) return; // Prevent going over max
+        onChange && onChange(val);
+      }}
+    />
+    <span className="absolute right-2 top-2 text-gray-500 font-bold text-xs">%</span>
+  </div>
+);
+
+const Toggle = ({ label, checked, onChange }: any) => (
+  <button 
+    onClick={() => onChange(!checked)}
+    className={`w-full flex items-center justify-between p-3 rounded-lg border transition-all ${checked ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200 opacity-75'}`}
+  >
+    <span className={`font-bold text-sm ${checked ? 'text-green-800' : 'text-gray-700'}`}>{label}</span>
+    {checked ? <ToggleRight className="text-green-600" size={28} /> : <ToggleLeft className="text-gray-400" size={28} />}
+  </button>
+);
 
 interface AdminPanelProps {
   config: CommissionConfig;
@@ -33,6 +76,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onUpdateConfig }
       setIsDirty(true);
   };
 
+  const handleBusinessLineChange = (line: BusinessLine, field: 'rate' | 'target', value: number) => {
+    setLocalConfig(prev => {
+       if(field === 'rate') {
+         return { ...prev, rates: { ...prev.rates, [line]: value } };
+       } else {
+         return { ...prev, lineTargets: { ...prev.lineTargets, [line]: value } };
+       }
+    });
+    setIsDirty(true);
+  };
+
   const handleScaleChange = (
     type: 'positive' | 'negative', 
     index: number, 
@@ -62,6 +116,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onUpdateConfig }
     return (localConfig.negativeScales[index - 1].endAmount || 0) - 1;
   };
 
+  // Logic to handle descending cascades (Start -> End)
+  // When row[i].endPercentage changes, row[i+1].startPercentage must update to (end - 1)
   const handleCoverageChange = (
     type: 'portfolio' | 'closing',
     index: number,
@@ -71,15 +127,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onUpdateConfig }
       const key = type === 'portfolio' ? 'portfolioScales' : 'closingScales';
       const newScales = [...localConfig[key]] as [CoverageScaleRow, CoverageScaleRow, CoverageScaleRow];
       
+      // Update the target field
       newScales[index] = { ...newScales[index], [field]: value };
+
+      // If we changed 'endPercentage', we must update the NEXT row's 'startPercentage'
+      if (field === 'endPercentage' && index < newScales.length - 1) {
+          newScales[index + 1] = { 
+              ...newScales[index + 1], 
+              startPercentage: value - 1 
+          };
+          // Also cascade update if the new start makes the next end invalid (optional, but good for UX)
+          if (newScales[index + 1].endPercentage >= value - 1) {
+              newScales[index + 1].endPercentage = value - 2;
+          }
+      }
+      
+      // If we changed 'endPercentage' of the SECOND row, update THIRD row start
+       if (field === 'endPercentage' && index === 1) {
+          newScales[2] = { 
+              ...newScales[2], 
+              startPercentage: value - 1 
+          };
+      }
+
       setLocalConfig(prev => ({ ...prev, [key]: newScales }));
       setIsDirty(true);
-  };
-
-  const getCoverageStart = (type: 'portfolio' | 'closing', index: number) => {
-     const scales = type === 'portfolio' ? localConfig.portfolioScales : localConfig.closingScales;
-     if (index === 0) return scales[index].startPercentage; 
-     return scales[index-1].endPercentage - 1;
   };
 
   const handleSave = () => {
@@ -88,43 +160,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onUpdateConfig }
       setIsDirty(false);
     }
   };
-
-  // UI Components
-  const InputCurrency = ({ value, onChange, readOnly = false }: any) => (
-    <div className="relative">
-      <span className="absolute left-2 top-2 text-gray-500 font-bold text-xs">$</span>
-      <input 
-        type="number" 
-        readOnly={readOnly}
-        className={`w-full border rounded pl-6 pr-2 py-1 text-sm font-mono ${readOnly ? 'bg-gray-100 text-gray-500' : 'bg-white text-black border-gray-300 focus:ring-2 focus:ring-[#FFB800]'}`}
-        value={value}
-        onChange={e => onChange && onChange(parseFloat(e.target.value))}
-      />
-    </div>
-  );
-
-  const InputPercent = ({ value, onChange, readOnly = false }: any) => (
-    <div className="relative">
-      <input 
-        type="number" 
-        readOnly={readOnly}
-        className={`w-full border rounded pl-2 pr-6 py-1 text-sm text-center font-bold ${readOnly ? 'bg-gray-100 text-gray-500' : 'bg-white text-black border-gray-300 focus:ring-2 focus:ring-[#FFB800]'}`}
-        value={value}
-        onChange={e => onChange && onChange(parseFloat(e.target.value))}
-      />
-      <span className="absolute right-2 top-2 text-gray-500 font-bold text-xs">%</span>
-    </div>
-  );
-
-  const Toggle = ({ label, checked, onChange }: any) => (
-    <button 
-      onClick={() => onChange(!checked)}
-      className={`w-full flex items-center justify-between p-3 rounded-lg border transition-all ${checked ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200 opacity-75'}`}
-    >
-      <span className={`font-bold text-sm ${checked ? 'text-green-800' : 'text-gray-500'}`}>{label}</span>
-      {checked ? <ToggleRight className="text-green-600" size={28} /> : <ToggleLeft className="text-gray-400" size={28} />}
-    </button>
-  );
 
   return (
     <div className="flex flex-col min-h-screen pb-24">
@@ -173,7 +208,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onUpdateConfig }
                  </h4>
                </div>
                <table className="w-full text-sm">
-                 <thead className="bg-gray-50 dark:bg-gray-900 text-xs uppercase text-gray-500 dark:text-gray-400">
+                 <thead className="bg-gray-50 dark:bg-gray-900 text-xs uppercase text-gray-700 dark:text-gray-400">
                    <tr>
                      <th className="p-2 text-left">Escala</th>
                      <th className="p-2">Desde ($)</th>
@@ -184,13 +219,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onUpdateConfig }
                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700 dark:bg-gray-800">
                    {localConfig.positiveScales.map((row, idx) => (
                      <tr key={idx}>
-                       <td className="p-2 font-bold text-xs text-gray-400 text-center">{idx + 1}</td>
+                       <td className="p-2 font-bold text-xs text-gray-600 dark:text-gray-400 text-center">{idx + 1}</td>
                        <td className="p-2"><InputCurrency value={getPosStart(idx)} readOnly /></td>
                        <td className="p-2">
                          {idx < 3 ? (
                            <InputCurrency value={row.endAmount} onChange={(v:number) => handleScaleChange('positive', idx, 'endAmount', v)} />
                          ) : (
-                           <span className="text-xs text-gray-400 italic block text-center">Sin Límite</span>
+                           <span className="text-xs text-gray-500 italic block text-center">Sin Límite</span>
                          )}
                        </td>
                        <td className="p-2 w-24"><InputPercent value={row.commissionPercentage} onChange={(v:number) => handleScaleChange('positive', idx, 'commissionPercentage', v)} /></td>
@@ -208,7 +243,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onUpdateConfig }
                  </h4>
                </div>
                <table className="w-full text-sm">
-                 <thead className="bg-gray-50 dark:bg-gray-900 text-xs uppercase text-gray-500 dark:text-gray-400">
+                 <thead className="bg-gray-50 dark:bg-gray-900 text-xs uppercase text-gray-700 dark:text-gray-400">
                    <tr>
                      <th className="p-2 text-left">Escala</th>
                      <th className="p-2">Desde ($)</th>
@@ -219,13 +254,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onUpdateConfig }
                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700 dark:bg-gray-800">
                    {localConfig.negativeScales.map((row, idx) => (
                      <tr key={idx}>
-                       <td className="p-2 font-bold text-xs text-gray-400 text-center">{idx + 1}</td>
+                       <td className="p-2 font-bold text-xs text-gray-600 dark:text-gray-400 text-center">{idx + 1}</td>
                        <td className="p-2"><InputCurrency value={getNegStart(idx)} readOnly /></td>
                        <td className="p-2">
                          {idx < 3 ? (
                            <InputCurrency value={row.endAmount} onChange={(v:number) => handleScaleChange('negative', idx, 'endAmount', v)} />
                          ) : (
-                           <span className="text-xs text-gray-400 italic block text-center">Sin Límite Inf.</span>
+                           <span className="text-xs text-gray-500 italic block text-center">Sin Límite Inf.</span>
                          )}
                        </td>
                        <td className="p-2 w-24"><InputPercent value={row.commissionPercentage} onChange={(v:number) => handleScaleChange('negative', idx, 'commissionPercentage', v)} /></td>
@@ -246,70 +281,107 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onUpdateConfig }
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
             
-            {/* Portfolio Coverage */}
+            {/* Portfolio Coverage - TABLE 1 */}
             <div className={`border rounded-lg p-4 transition-all dark:border-gray-600 ${localConfig.enablePortfolioCoverage ? 'opacity-100' : 'opacity-50 grayscale'}`}>
               <div className="mb-4">
                  <Toggle label="Cobertura de Cartera de Clientes" checked={localConfig.enablePortfolioCoverage} onChange={(v:boolean) => handleChange('enablePortfolioCoverage', v)} />
               </div>
               
               <div className="mb-4">
-                <label className="text-xs font-bold uppercase text-gray-500">Meta Mensual (Cant. Clientes)</label>
-                <input type="number" className="border rounded w-full p-2 mt-1 dark:bg-gray-700 dark:text-white" value={localConfig.portfolioActivityTarget} onChange={e => handleChange('portfolioActivityTarget', parseFloat(e.target.value))} />
+                <label className="text-xs font-bold uppercase text-gray-500">Meta Mensual de actividades por cliente (% de Cartera)</label>
+                <InputPercent value={localConfig.portfolioActivityTarget} onChange={(v:number) => handleChange('portfolioActivityTarget', v)} />
+                <p className="text-[10px] text-gray-400 mt-1">Porcentaje de clientes activos en CRM requeridos sobre el total de la cartera.</p>
               </div>
 
               <table className="w-full text-sm">
-                 <thead className="bg-gray-100 dark:bg-gray-900 text-xs font-bold text-gray-500 dark:text-gray-300">
+                 <thead className="bg-gray-100 dark:bg-gray-900 text-xs font-bold text-gray-700 dark:text-gray-300">
                    <tr>
                      <th className="p-2 text-left">Nivel</th>
-                     <th className="p-2">Desde (%)</th>
-                     <th className="p-2">Hasta (%)</th>
-                     <th className="p-2">Factor (x)</th>
+                     <th className="p-2 text-center">Desde (%)</th>
+                     <th className="p-2 text-center">Hasta (%)</th>
+                     <th className="p-2 text-center">Factor (x)</th>
                    </tr>
                  </thead>
                  <tbody className="divide-y dark:divide-gray-700 dark:text-gray-200">
                    {localConfig.portfolioScales.map((row, idx) => (
                      <tr key={idx}>
-                       <td className="p-2 text-xs font-bold">Escala {idx + 1}</td>
-                       <td className="p-2 text-center text-gray-500">{idx === 0 ? row.startPercentage : getCoverageStart('portfolio', idx)}%</td>
-                       <td className="p-2"><InputPercent value={row.endPercentage} onChange={(v:number) => handleCoverageChange('portfolio', idx, 'endPercentage', v)} /></td>
+                       <td className="p-2 text-xs font-bold text-gray-600 dark:text-white">Escala {idx + 1}</td>
+                       <td className="p-2">
+                         {/* First scale is editable start, others are calculated */}
+                         <InputPercent 
+                           value={row.startPercentage} 
+                           readOnly={idx > 0} 
+                           onChange={(v: number) => {
+                             if(idx === 0) handleCoverageChange('portfolio', idx, 'startPercentage', v);
+                           }} 
+                         />
+                       </td>
+                       <td className="p-2">
+                         <InputPercent 
+                           value={row.endPercentage} 
+                           maxLimit={row.startPercentage}
+                           onChange={(v: number) => handleCoverageChange('portfolio', idx, 'endPercentage', v)} 
+                         />
+                       </td>
                        <td className="p-2"><input type="number" step="0.1" className="w-full border rounded text-center dark:bg-gray-700" value={row.payoutFactor} onChange={e => handleCoverageChange('portfolio', idx, 'payoutFactor', parseFloat(e.target.value))} /></td>
                      </tr>
                    ))}
                  </tbody>
               </table>
+              <div className="mt-2 text-[10px] text-gray-400 italic text-center">
+                 * El campo "Desde" de las escalas 2 y 3 se calcula automáticamente (Escala Anterior - 1%).
+              </div>
             </div>
 
-            {/* Closing Coverage */}
+            {/* Closing Coverage - TABLE 2 */}
             <div className={`border rounded-lg p-4 transition-all dark:border-gray-600 ${localConfig.enableClosingCoverage ? 'opacity-100' : 'opacity-50 grayscale'}`}>
               <div className="mb-4">
                  <Toggle label="Cobertura de Cierres" checked={localConfig.enableClosingCoverage} onChange={(v:boolean) => handleChange('enableClosingCoverage', v)} />
               </div>
               
               <div className="mb-4">
-                <label className="text-xs font-bold uppercase text-gray-500">Meta Cierres / Oportunidades (%)</label>
+                <label className="text-xs font-bold uppercase text-gray-500">Meta Mensual de Cierres (% Oportunidades Ganadas)</label>
                 <InputPercent value={localConfig.closingPercentageTarget} onChange={(v:number) => handleChange('closingPercentageTarget', v)} />
+                <p className="text-[10px] text-gray-400 mt-1">Porcentaje mínimo de conversión (Ganadas vs Totales) para considerar éxito.</p>
               </div>
 
               <table className="w-full text-sm">
-                 <thead className="bg-gray-100 dark:bg-gray-900 text-xs font-bold text-gray-500 dark:text-gray-300">
+                 <thead className="bg-gray-100 dark:bg-gray-900 text-xs font-bold text-gray-700 dark:text-gray-300">
                    <tr>
                      <th className="p-2 text-left">Nivel</th>
-                     <th className="p-2">Desde (%)</th>
-                     <th className="p-2">Hasta (%)</th>
-                     <th className="p-2">Factor (x)</th>
+                     <th className="p-2 text-center">Desde (%)</th>
+                     <th className="p-2 text-center">Hasta (%)</th>
+                     <th className="p-2 text-center">Factor (x)</th>
                    </tr>
                  </thead>
                  <tbody className="divide-y dark:divide-gray-700 dark:text-gray-200">
                    {localConfig.closingScales.map((row, idx) => (
                      <tr key={idx}>
-                       <td className="p-2 text-xs font-bold">Escala {idx + 1}</td>
-                       <td className="p-2 text-center text-gray-500">{idx === 0 ? row.startPercentage : getCoverageStart('closing', idx)}%</td>
-                       <td className="p-2"><InputPercent value={row.endPercentage} onChange={(v:number) => handleCoverageChange('closing', idx, 'endPercentage', v)} /></td>
+                       <td className="p-2 text-xs font-bold text-gray-600 dark:text-white">Escala {idx + 1}</td>
+                       <td className="p-2">
+                          <InputPercent 
+                           value={row.startPercentage} 
+                           readOnly={idx > 0} 
+                           onChange={(v: number) => {
+                             if(idx === 0) handleCoverageChange('closing', idx, 'startPercentage', v);
+                           }} 
+                         />
+                       </td>
+                       <td className="p-2">
+                         <InputPercent 
+                           value={row.endPercentage} 
+                           maxLimit={row.startPercentage}
+                           onChange={(v: number) => handleCoverageChange('closing', idx, 'endPercentage', v)} 
+                         />
+                       </td>
                        <td className="p-2"><input type="number" step="0.1" className="w-full border rounded text-center dark:bg-gray-700" value={row.payoutFactor} onChange={e => handleCoverageChange('closing', idx, 'payoutFactor', parseFloat(e.target.value))} /></td>
                      </tr>
                    ))}
                  </tbody>
               </table>
+              <div className="mt-2 text-[10px] text-gray-400 italic text-center">
+                 * El campo "Desde" de las escalas 2 y 3 se calcula automáticamente (Escala Anterior - 1%).
+              </div>
             </div>
 
           </div>
@@ -359,6 +431,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ config, onUpdateConfig }
               </div>
             </div>
 
+          </div>
+        </section>
+
+        {/* 4. CONFIGURACIÓN LÍNEAS DE NEGOCIO (NEW SECTION) */}
+        <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+           <div className="flex items-center gap-2 mb-6 border-b pb-2 dark:border-gray-600">
+            <Briefcase className="text-[#003366] dark:text-[#FFB800]" />
+            <h3 className="font-bold text-xl text-[#003366] dark:text-white">Configuración de Líneas de Negocio</h3>
+          </div>
+          <div className="overflow-x-auto">
+             <table className="w-full text-sm">
+                <thead className="bg-gray-100 dark:bg-gray-900 text-xs font-bold text-gray-700 dark:text-gray-300">
+                   <tr>
+                      <th className="p-3 text-left">Línea de Negocio</th>
+                      <th className="p-3 text-center">Tasa de Comisión (%)</th>
+                      <th className="p-3 text-right">Meta Financiera ($MXN)</th>
+                   </tr>
+                </thead>
+                <tbody className="divide-y dark:divide-gray-700 dark:text-gray-200">
+                   {Object.keys(localConfig.rates).map((line) => (
+                      <tr key={line}>
+                         <td className="p-3 font-medium text-gray-800 dark:text-white">{line}</td>
+                         <td className="p-3 w-40">
+                            <InputPercent 
+                               value={(localConfig.rates[line as BusinessLine] || 0) * 100} 
+                               onChange={(v: number) => handleBusinessLineChange(line as BusinessLine, 'rate', v / 100)} 
+                            />
+                         </td>
+                         <td className="p-3 w-48">
+                            <InputCurrency 
+                               value={localConfig.lineTargets[line as BusinessLine] || 0} 
+                               onChange={(v: number) => handleBusinessLineChange(line as BusinessLine, 'target', v)} 
+                            />
+                         </td>
+                      </tr>
+                   ))}
+                </tbody>
+             </table>
           </div>
         </section>
 

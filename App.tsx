@@ -34,21 +34,21 @@ const INITIAL_CONFIG: CommissionConfig = {
     { endAmount: undefined, commissionPercentage: 50 }
   ],
 
-  // 2. Coverages
+  // 2. Coverages (DESCENDING LOGIC: Start -> End)
   enablePortfolioCoverage: true,
-  portfolioActivityTarget: 20, // 20 Clients
+  portfolioActivityTarget: 50, // 50% of Portfolio
   portfolioScales: [
-    { startPercentage: 90, endPercentage: 100, payoutFactor: 1.0 },
-    { startPercentage: 80, endPercentage: 89, payoutFactor: 0.9 },
-    { startPercentage: 0, endPercentage: 79, payoutFactor: 0.8 }
+    { startPercentage: 100, endPercentage: 90, payoutFactor: 1.0 },
+    { startPercentage: 89, endPercentage: 80, payoutFactor: 0.9 },
+    { startPercentage: 79, endPercentage: 0, payoutFactor: 0.8 }
   ],
 
   enableClosingCoverage: true,
   closingPercentageTarget: 30, // 30% closing rate
   closingScales: [
-    { startPercentage: 90, endPercentage: 100, payoutFactor: 1.0 },
-    { startPercentage: 80, endPercentage: 89, payoutFactor: 0.9 },
-    { startPercentage: 0, endPercentage: 79, payoutFactor: 0.8 }
+    { startPercentage: 100, endPercentage: 90, payoutFactor: 1.0 },
+    { startPercentage: 89, endPercentage: 80, payoutFactor: 0.9 },
+    { startPercentage: 79, endPercentage: 0, payoutFactor: 0.8 }
   ],
 
   // 3. Bonuses (Granular)
