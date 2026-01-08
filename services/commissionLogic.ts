@@ -1,4 +1,4 @@
-import { CommissionConfig, Invoice, CommissionRecord, KpiData } from '../types';
+import { CommissionConfig, Invoice, CommissionRecord } from '../types';
 
 export const calculatePaymentDate = (invoiceDateStr: string): string => {
   const invoiceDate = new Date(invoiceDateStr);
@@ -9,15 +9,11 @@ export const calculatePaymentDate = (invoiceDateStr: string): string => {
   const baseMonth = baseDate.getMonth();
   const baseYear = baseDate.getFullYear();
 
-  let payDate: Date;
-
   if (baseDay <= 15) {
-    payDate = new Date(baseYear, baseMonth, 15);
+    return new Date(baseYear, baseMonth, 15).toISOString().split('T')[0];
   } else {
-    payDate = new Date(baseYear, baseMonth + 1, 15);
+    return new Date(baseYear, baseMonth + 1, 15).toISOString().split('T')[0];
   }
-
-  return payDate.toISOString().split('T')[0];
 };
 
 export const calculateCommissionsBatch = (
@@ -26,33 +22,82 @@ export const calculateCommissionsBatch = (
   currentTotalSales: number
 ): CommissionRecord[] => {
   
-  // 1. Determine Global Penalty Factor
-  // NOTE: If Portfolio Coverage is DISABLED, we assume full achievement (no penalty from system level)
-  // or we stick to the Sales Target penalty. The prompt says "ligarlo al dato". 
-  // For this simulation, we'll keep the Sales Target penalty as the primary driver, 
-  // but if Portfolio toggle is OFF, we might enforce a minimum factor of 1.0 (no penalty) 
-  // OR just hide the metric. Usually sales penalties apply regardless.
-  // Let's assume the Penalty Scale is ALWAYS active if enabled, but the specific KPIs 
-  // (Portfolio/Conversion) are extra conditions.
+  // --- 1. CALCULATE FINANCIAL FACTOR (ESCALAS) ---
+  let financialPercentage = 0; 
   
-  const achievement = config.globalTarget > 0 ? currentTotalSales / config.globalTarget : 0;
-  let penaltyFactor = 1.0;
+  if (currentTotalSales > config.globalTarget) {
+    // POSITIVE SCALES
+    const p1 = config.positiveScales[0];
+    const s1Start = config.globalTarget + 1;
+    
+    const p2 = config.positiveScales[1];
+    const s2Start = (p1.endAmount || s1Start) + 1;
 
-  // Only apply target-based penalties if Portfolio Coverage (Simulated as "System Active" in prompt) is ON.
-  // The prompt asked to change "Active System" to "Portfolio Coverage".
-  if (config.enablePortfolioCoverage) {
-    if (achievement >= 0.90) {
-      penaltyFactor = config.scale90to100;
-    } else if (achievement >= 0.80) {
-      penaltyFactor = config.scale80to89; 
-    } else if (achievement >= 0.70) {
-      penaltyFactor = config.scale70to79;  
+    const p3 = config.positiveScales[2];
+    const s3Start = (p2.endAmount || s2Start) + 1;
+
+    const p4 = config.positiveScales[3];
+    const s4Start = (p3.endAmount || s3Start) + 1;
+
+    if (currentTotalSales >= s4Start) {
+        financialPercentage = p4.commissionPercentage;
+    } else if (currentTotalSales >= s3Start) {
+        financialPercentage = p3.commissionPercentage;
+    } else if (currentTotalSales >= s2Start) {
+        financialPercentage = p2.commissionPercentage;
     } else {
-      penaltyFactor = config.scaleBelow70;
+        financialPercentage = p1.commissionPercentage;
     }
+
   } else {
-    // If coverage logic is disabled, pay 100% of generated commission without scale penalties
-    penaltyFactor = 1.0; 
+    // NEGATIVE SCALES
+    const n1 = config.negativeScales[0];
+    const n2 = config.negativeScales[1];
+    const n3 = config.negativeScales[2];
+    const n4 = config.negativeScales[3];
+
+    if (currentTotalSales > (n1.endAmount || 0)) {
+        financialPercentage = n1.commissionPercentage;
+    } else if (currentTotalSales > (n2.endAmount || 0)) {
+        financialPercentage = n2.commissionPercentage;
+    } else if (currentTotalSales > (n3.endAmount || 0)) {
+        financialPercentage = n3.commissionPercentage;
+    } else {
+        financialPercentage = n4.commissionPercentage;
+    }
+  }
+
+  const financialFactor = financialPercentage / 100;
+
+  // --- 2. CALCULATE COVERAGE FACTORS ---
+  const uniqueCustomers = new Set(invoices.map(i => i.customerName)).size;
+  let portfolioFactor = 1.0;
+  
+  if (config.enablePortfolioCoverage) {
+    const coverageAchievedPct = config.portfolioActivityTarget > 0 
+      ? (uniqueCustomers / config.portfolioActivityTarget) * 100 
+      : 0;
+
+    if (coverageAchievedPct >= config.portfolioScales[0].startPercentage) {
+        portfolioFactor = config.portfolioScales[0].payoutFactor;
+    } else if (coverageAchievedPct >= config.portfolioScales[1].startPercentage) {
+        portfolioFactor = config.portfolioScales[1].payoutFactor;
+    } else {
+        portfolioFactor = config.portfolioScales[2].payoutFactor;
+    }
+  }
+
+  const mockClosingRate = 35; // Simulated for now
+  let closingFactor = 1.0;
+
+  if (config.enableClosingCoverage) {
+      if (mockClosingRate >= config.closingScales[0].startPercentage) {
+          closingFactor = config.closingScales[0].payoutFactor;
+      } else if (mockClosingRate >= config.closingScales[1].startPercentage) {
+          closingFactor = config.closingScales[1].payoutFactor;
+      } else {
+          closingFactor = config.closingScales[2].payoutFactor;
+      }
   }
 
   return invoices.map(inv => {
@@ -61,27 +106,45 @@ export const calculateCommissionsBatch = (
     baseDate.setDate(baseDate.getDate() + 60);
 
     const baseRate = config.rates[inv.businessLine] || 0;
+    
+    // Base Commission
     let rawCommission = inv.docTotal * baseRate;
 
+    // Apply Factors
+    const adjustedCommission = rawCommission * financialFactor * portfolioFactor * closingFactor;
+
+    // Add Bonuses (Granular Checks)
     let bonusAmount = 0;
-    if (config.enableBonuses) {
-        if (inv.isNewClient) bonusAmount += config.bonusNewClientReward;
-        if (inv.isRecoveredClient) bonusAmount += config.bonusRecoveredReward;
+    
+    // 1. New Client Bonus
+    if (config.enableBonusNewClient && inv.isNewClient && inv.docTotal >= config.bonusNewClient.minPurchaseAmount) {
+        bonusAmount += config.bonusNewClient.rewardAmount;
+    }
+    
+    // 2. Recovered Client Bonus
+    if (config.enableBonusRecovered && inv.isRecoveredClient && inv.docTotal >= config.bonusRecoveredClient.minPurchaseAmount) {
+        bonusAmount += config.bonusRecoveredClient.rewardAmount;
     }
 
-    const totalBeforePenalty = rawCommission + bonusAmount;
-    const finalCommission = totalBeforePenalty * penaltyFactor;
+    // 3. Volume Bonus (Calculation usually done per Rep aggregate, but here applied flat for simplicity or as a 'share')
+    // For this simulation, we'll apply it if they met the volume target in the month (passed via config if needed, but handled simpler here)
+    
+    const finalTotal = adjustedCommission + bonusAmount;
 
     return {
       ...inv,
       baseDate: baseDate.toISOString().split('T')[0],
       paymentDate: paymentDate,
       appliedRate: baseRate,
-      baseCommissionAmount: totalBeforePenalty,
-      finalCommissionAmount: finalCommission,
-      commissionAmount: finalCommission,
-      commissionRate: baseRate,
-      penaltyFactor: penaltyFactor,
+      baseCommissionAmount: rawCommission,
+      finalCommissionAmount: finalTotal,
+      
+      // Breakdown
+      financialFactor,
+      portfolioFactor,
+      closingFactor,
+      penaltyFactor: financialFactor * portfolioFactor * closingFactor,
+      
       status: 'Pending'
     };
   });

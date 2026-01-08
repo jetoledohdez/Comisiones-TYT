@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { CommissionConfig, User, FilterState, UserRole, Invoice } from '../types';
+import { CommissionConfig, User, FilterState, UserRole, LINE_COLORS, ClientActivity, OpportunityData } from '../types';
 import { calculateCommissionsBatch } from '../services/commissionLogic';
-import { getMockInvoices } from '../services/mockSapService';
+import { getMockInvoices, getMockActivities, getMockOpportunities } from '../services/mockSapService';
 import { FilterBar } from './FilterBar';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip
 } from 'recharts';
-import { ChevronDown, ChevronRight, AlertTriangle, Clock, Mail } from 'lucide-react';
+import { ChevronDown, ChevronRight, AlertTriangle, Clock } from 'lucide-react';
 
 interface DashboardProps {
   user: User;
@@ -25,7 +25,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, config, isDarkMode }
 
   const [expandedLine, setExpandedLine] = useState<string | null>(null);
 
-  // 1. Fetch & Filter Data
+  // 1. Data Fetching & Processing
   const rawInvoices = useMemo(() => getMockInvoices(filters.month, filters.year), [filters.month, filters.year]);
   
   const filteredInvoices = useMemo(() => {
@@ -40,35 +40,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, config, isDarkMode }
   }, [rawInvoices, filters, user]);
 
   const currentTotalSales = filteredInvoices.reduce((acc, inv) => acc + inv.docTotal, 0);
-  const uniqueReps = new Set(filteredInvoices.map(i => i.salesRepId)).size;
-  // Use uniqueReps to scale target for visualization if viewing multiple people
-  const effectiveTarget = uniqueReps > 1 ? config.globalTarget * (uniqueReps * 0.5) : config.globalTarget; 
-  
   const processedInvoices = useMemo(() => calculateCommissionsBatch(filteredInvoices, config, currentTotalSales), [filteredInvoices, config, currentTotalSales]);
-
   const totalCommission = processedInvoices.reduce((acc, curr) => acc + curr.finalCommissionAmount, 0);
-  const achievementRate = effectiveTarget > 0 ? currentTotalSales / effectiveTarget : 0;
-  const penaltyFactor = processedInvoices.length > 0 ? processedInvoices[0].penaltyFactor : 1;
 
-  // Countdown & Alert Logic
-  const today = new Date();
-  const daysInMonth = new Date(filters.year, filters.month, 0).getDate();
-  let daysLeft = 0;
-  if (today.getMonth() + 1 === filters.month && today.getFullYear() === filters.year) {
-    daysLeft = daysInMonth - today.getDate();
-  }
-  const showUrgencyAlert = daysLeft <= 5 && achievementRate < 1.0;
+  // Mocked Activities & Opportunities based on filtered data context
+  const clientActivities = useMemo(() => getMockActivities(filteredInvoices), [filteredInvoices]);
+  const opportunities = useMemo(() => getMockOpportunities(filteredInvoices), [filteredInvoices]);
 
+  // Coverage Metrics
+  const activeClientsCount = clientActivities.length;
+  const portfolioTarget = config.portfolioActivityTarget;
+  const portfolioAchievedPct = portfolioTarget > 0 ? (activeClientsCount / portfolioTarget) * 100 : 0;
+
+  const wonOpportunities = opportunities.filter(o => o.status === 'Won').length;
+  const totalOpportunities = opportunities.length;
+  const closingRate = totalOpportunities > 0 ? (wonOpportunities / totalOpportunities) * 100 : 0;
+  
   // Chart Data
   const chartData = useMemo(() => {
-    const allLines = Object.keys(config.rates);
     const dataMap: Record<string, number> = {};
-    allLines.forEach(l => dataMap[l] = 0);
     processedInvoices.forEach(inv => {
       dataMap[inv.businessLine] = (dataMap[inv.businessLine] || 0) + inv.docTotal;
     });
-    return Object.entries(dataMap).map(([name, sales]) => ({ name, sales }));
-  }, [processedInvoices, config]);
+    return Object.entries(dataMap).map(([name, value]) => ({ name, value }));
+  }, [processedInvoices]);
 
   // Consolidated Table Data
   const consolidatedTable = useMemo(() => {
@@ -100,52 +95,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, config, isDarkMode }
     <div className="space-y-6">
       <FilterBar user={user} filters={filters} onFilterChange={setFilters} />
 
-      {/* Alert Banner */}
-      {showUrgencyAlert && (
-        <div className="bg-red-600 text-white p-4 rounded-lg shadow-lg flex items-center justify-between animate-pulse">
-          <div className="flex items-center space-x-3">
-             <AlertTriangle size={24} />
-             <div>
-               <h3 className="font-bold text-lg">¡ATENCIÓN! CIERRE DE MES CRÍTICO</h3>
-               <p className="text-sm text-red-100">Meta no alcanzada. Quedan {daysLeft} días. Reporte de desviación enviado a Dirección.</p>
-             </div>
-          </div>
-          <div className="flex items-center space-x-2 bg-red-800 px-3 py-1 rounded">
-            <Mail size={16} />
-            <span className="text-xs font-bold uppercase">Correo Enviado</span>
-          </div>
-        </div>
-      )}
-
-      {/* Top Level KPIs & Countdown */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      {/* Top Level KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         
-        {/* Countdown Widget */}
-        <div className={`${isDarkMode ? 'bg-gray-800' : 'bg-white'} p-4 rounded-lg shadow-sm border-l-4 border-[#FFB800] flex flex-col items-center justify-center`}>
-           <div className="flex items-center space-x-2 mb-1">
-             <Clock className="text-[#FFB800]" size={18} />
-             <span className={`text-xs font-bold uppercase ${subTextClass}`}>Días Restantes</span>
-           </div>
-           <span className="text-4xl font-black text-[#FFB800]">{daysLeft > 0 ? daysLeft : '-'}</span>
-           <span className="text-[10px] text-gray-500">Cierre de Mes</span>
-        </div>
-
         <div className={`${cardClass} p-5 rounded-lg shadow-sm border-t-4 border-[#003366] col-span-1`}>
           <p className={`text-xs uppercase font-bold ${subTextClass}`}>Venta Total</p>
           <h3 className="text-2xl font-bold">${currentTotalSales.toLocaleString()}</h3>
-          <p className={`text-xs mt-1 ${subTextClass}`}>vs Meta ${effectiveTarget.toLocaleString()}</p>
+          <p className={`text-xs mt-1 ${subTextClass}`}>vs Meta ${config.globalTarget.toLocaleString()}</p>
         </div>
         
-        <div className={`${cardClass} p-5 rounded-lg shadow-sm border-t-4 ${achievementRate < 0.7 ? 'border-red-500' : 'border-[#FFB800]'} col-span-1`}>
-          <p className={`text-xs uppercase font-bold ${subTextClass}`}>Cumplimiento</p>
+        <div className={`${cardClass} p-5 rounded-lg shadow-sm border-t-4 ${portfolioAchievedPct < 100 ? 'border-red-500' : 'border-green-500'} col-span-1`}>
+          <p className={`text-xs uppercase font-bold ${subTextClass}`}>Cobertura Cartera</p>
           <div className="flex items-end space-x-2">
-            <h3 className="text-2xl font-bold">{(achievementRate * 100).toFixed(1)}%</h3>
+            <h3 className="text-2xl font-bold">{portfolioAchievedPct.toFixed(1)}%</h3>
           </div>
-          <p className={`text-xs mt-1 ${subTextClass}`}>Factor Pago: {penaltyFactor * 100}%</p>
+          <p className={`text-xs mt-1 ${subTextClass}`}>{activeClientsCount} de {portfolioTarget} clientes</p>
+        </div>
+
+        <div className={`${cardClass} p-5 rounded-lg shadow-sm border-t-4 border-[#FFB800] col-span-1`}>
+          <p className={`text-xs uppercase font-bold ${subTextClass}`}>Tasa Cierres</p>
+          <h3 className="text-2xl font-bold">{closingRate.toFixed(1)}%</h3>
+          <p className={`text-xs mt-1 ${subTextClass}`}>Meta: {config.closingPercentageTarget}%</p>
         </div>
 
         <div className={`${cardClass} p-5 rounded-lg shadow-sm border-t-4 border-green-600 col-span-1`}>
-          <p className={`text-xs uppercase font-bold ${subTextClass}`}>Comisión</p>
+          <p className={`text-xs uppercase font-bold ${subTextClass}`}>Comisión Estimada</p>
           <h3 className="text-2xl font-bold">${totalCommission.toLocaleString()}</h3>
           <p className={`text-xs mt-1 ${subTextClass}`}>Neta a Pagar</p>
         </div>
@@ -153,113 +127,210 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, config, isDarkMode }
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Main Chart */}
-        <div className={`lg:col-span-2 ${cardClass} p-6 rounded-lg shadow-sm`}>
-          <div className="flex justify-between items-center mb-6">
-            <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Desempeño por Línea de Negocio</h3>
+        {/* Pie Chart */}
+        <div className={`lg:col-span-2 ${cardClass} p-6 rounded-lg shadow-sm flex flex-col items-center`}>
+          <div className="w-full flex justify-between items-center mb-2">
+            <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Distribución por Línea de Negocio</h3>
           </div>
-          <div className="h-[300px] w-full bg-white rounded p-2 text-black"> 
+          <div className="h-[300px] w-full relative"> 
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={false} interval={0} angle={-15} textAnchor="end" height={60} />
-                <YAxis fontSize={12} tickFormatter={(val) => `$${val/1000}k`} axisLine={false} tickLine={false} />
-                <Tooltip 
-                  cursor={{fill: '#f3f4f6'}}
-                  formatter={(value: number) => [`$${value.toLocaleString()}`, 'Venta']}
-                  contentStyle={{ backgroundColor: '#1A1A1A', border: 'none', color: '#fff', borderRadius: '4px' }}
-                />
-                <Bar dataKey="sales" fill="#003366" radius={[4, 4, 0, 0]}>
+              <PieChart>
+                <Pie
+                  data={chartData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={100}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
                   {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.name === 'Ventas' ? '#FFB800' : '#003366'} />
+                    <Cell key={`cell-${index}`} fill={LINE_COLORS[entry.name as keyof typeof LINE_COLORS] || '#999'} />
                   ))}
-                </Bar>
-              </BarChart>
+                </Pie>
+                <Tooltip 
+                  formatter={(value: number) => `$${value.toLocaleString()}`}
+                  contentStyle={{ backgroundColor: isDarkMode ? '#1F2937' : '#FFF', borderColor: isDarkMode ? '#374151' : '#E5E7EB', color: isDarkMode ? '#FFF' : '#000' }}
+                />
+              </PieChart>
             </ResponsiveContainer>
+            {/* Legend Overlay */}
+            <div className="absolute top-0 right-0 h-full overflow-y-auto text-xs space-y-1 p-2">
+               {chartData.map(d => (
+                 <div key={d.name} className="flex items-center gap-2">
+                   <span className="w-3 h-3 rounded-full" style={{ backgroundColor: LINE_COLORS[d.name as keyof typeof LINE_COLORS] }}></span>
+                   <span className={subTextClass}>{d.name}</span>
+                 </div>
+               ))}
+            </div>
           </div>
         </div>
 
-        {/* Updated Rules Summary with Monetary Equivalents */}
-        <div className={`${cardClass} p-6 rounded-lg shadow-sm flex flex-col`}>
-          <h3 className="font-bold mb-4 text-[#FFB800]">Reglas y Condiciones (Detalle)</h3>
+        {/* Rules Summary (Read Only) */}
+        <div className={`${cardClass} p-6 rounded-lg shadow-sm flex flex-col overflow-y-auto max-h-[400px]`}>
+          <h3 className="font-bold mb-4 text-[#FFB800] border-b pb-2 border-gray-600">Reglas de Juego (Configuración)</h3>
           
-          <div className="overflow-x-auto mb-4">
-             <table className="w-full text-xs">
-                <thead>
-                   <tr className={`border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-                      <th className={`text-left py-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>Concepto</th>
-                      <th className={`text-center py-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>%</th>
-                      <th className={`text-right py-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>Valor ($)</th>
-                   </tr>
-                </thead>
-                <tbody className={subTextClass}>
-                   <tr>
-                      <td className={`py-1 font-bold ${isDarkMode ? 'text-white' : 'text-black'}`}>Meta (100%)</td>
-                      <td className="text-center">-</td>
-                      <td className="text-right">${effectiveTarget.toLocaleString()}</td>
-                   </tr>
-                   <tr>
-                      <td className="py-1 text-red-500">Piso (Mín)</td>
-                      <td className="text-center">{config.floorPercentage}%</td>
-                      <td className="text-right">${(effectiveTarget * (config.floorPercentage/100)).toLocaleString()}</td>
-                   </tr>
-                   <tr>
-                      <td className="py-1 text-green-500">Sobre Piso</td>
-                      <td className="text-center">{config.overFloorPercentage}%</td>
-                      <td className="text-right">${(effectiveTarget * (config.overFloorPercentage/100)).toLocaleString()}</td>
-                   </tr>
-                </tbody>
-             </table>
-          </div>
+          <div className="space-y-4 text-sm">
+             <div>
+               <span className="block text-xs uppercase font-bold opacity-50">Meta Mensual Ventas</span>
+               <span className="font-mono font-bold text-lg">${config.globalTarget.toLocaleString()}</span>
+             </div>
 
-          <div className={`space-y-3 flex-1 text-sm border-t pt-4 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-             <div className="flex justify-between items-center">
-                <span>Castigo Global</span>
-                <span className={`font-bold ${penaltyFactor < 1 ? 'text-red-500' : 'text-green-500'}`}>
-                  {penaltyFactor * 100}%
-                </span>
+             <div>
+               <span className="block text-xs uppercase font-bold opacity-50 mb-1">Escala Positiva (Mayor a Meta)</span>
+               <div className="grid grid-cols-2 gap-1">
+                 {config.positiveScales.map((s, i) => (
+                   <div key={i} className="bg-green-900/20 p-1 rounded text-xs flex justify-between">
+                      <span>Nivel {i+1}</span>
+                      <span className="font-bold text-green-500">{s.commissionPercentage}%</span>
+                   </div>
+                 ))}
+               </div>
+             </div>
+
+             <div>
+               <span className="block text-xs uppercase font-bold opacity-50 mb-1">Escala Negativa (Menor a Meta)</span>
+               <div className="grid grid-cols-2 gap-1">
+                 {config.negativeScales.map((s, i) => (
+                   <div key={i} className="bg-red-900/20 p-1 rounded text-xs flex justify-between">
+                      <span>Nivel {i+1}</span>
+                      <span className="font-bold text-red-500">{s.commissionPercentage}%</span>
+                   </div>
+                 ))}
+               </div>
+             </div>
+
+             <div className="grid grid-cols-2 gap-4">
+                <div>
+                   <span className="block text-xs uppercase font-bold opacity-50">Cobertura Cartera</span>
+                   <span className={`font-bold ${config.enablePortfolioCoverage ? 'text-green-500' : 'text-gray-500'}`}>
+                     {config.enablePortfolioCoverage ? 'ACTIVO' : 'INACTIVO'}
+                   </span>
+                </div>
+                <div>
+                   <span className="block text-xs uppercase font-bold opacity-50">Cobertura Cierres</span>
+                   <span className={`font-bold ${config.enableClosingCoverage ? 'text-green-500' : 'text-gray-500'}`}>
+                     {config.enableClosingCoverage ? 'ACTIVO' : 'INACTIVO'}
+                   </span>
+                </div>
              </div>
              
-             {config.enablePortfolioCoverage && (
-               <div className="flex justify-between items-center">
-                  <span>Cobertura Cartera</span>
-                  <span className="font-mono text-xs">Obj: {config.minPortfolioCoverage}%</span>
-               </div>
-             )}
-             
-             {config.enableConversionRate && (
-               <div className="flex justify-between items-center">
-                  <span>Tasa Conversión</span>
-                  <span className="font-mono text-xs">Obj: {config.minConversionRate}%</span>
-               </div>
-             )}
-             
-             <div className="mt-4 bg-gray-900 p-3 rounded text-gray-300 text-xs">
-                {achievementRate < (config.floorPercentage/100)
-                  ? "❌ Sin Comisión (Piso no alcanzado)" 
-                  : penaltyFactor < 1 
-                    ? "⚠️ Comisión Penalizada (Ver tabla)" 
-                    : "✅ Comisión al 100%"}
+             <div>
+                <span className="block text-xs uppercase font-bold opacity-50 mb-1">Bonos Disponibles</span>
+                <div className="flex flex-wrap gap-2">
+                   {config.enableBonusNewClient && <span className="px-2 py-1 bg-blue-900/30 text-blue-400 rounded text-xs border border-blue-800">Cte. Nuevo</span>}
+                   {config.enableBonusRecovered && <span className="px-2 py-1 bg-indigo-900/30 text-indigo-400 rounded text-xs border border-indigo-800">Recuperado</span>}
+                   {config.enableBonusVolume && <span className="px-2 py-1 bg-yellow-900/30 text-yellow-400 rounded text-xs border border-yellow-800">Volumen</span>}
+                </div>
              </div>
+
           </div>
         </div>
       </div>
 
-      {/* Expandable Invoice Table */}
+      {/* NEW: Detalle Cobertura Clientes */}
+      <div className={`${cardClass} rounded-lg shadow-sm overflow-hidden`}>
+        <div className={`p-4 border-b flex justify-between items-center ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-100 bg-gray-50'}`}>
+          <div>
+            <h3 className="font-bold text-[#FFB800]">Detalle de Cobertura de Clientes</h3>
+            <p className="text-xs opacity-70">Actividades registradas en CRM (Odoo) vs Meta de {config.portfolioActivityTarget} Clientes</p>
+          </div>
+          <div className="text-right">
+             <span className="text-2xl font-bold">{portfolioAchievedPct.toFixed(0)}%</span>
+             <span className="text-xs block opacity-70">Logro vs Meta</span>
+          </div>
+        </div>
+        <div className="overflow-x-auto max-h-64">
+           <table className="w-full text-sm text-left">
+             <thead className={`text-xs uppercase border-b sticky top-0 ${tableHeaderClass}`}>
+               <tr>
+                 <th className="px-6 py-3">Cliente</th>
+                 <th className="px-6 py-3 text-center">Llamadas</th>
+                 <th className="px-6 py-3 text-center">Correos</th>
+                 <th className="px-6 py-3 text-center">Visitas</th>
+                 <th className="px-6 py-3 text-center">Reuniones</th>
+                 <th className="px-6 py-3 text-right font-bold">Total Actividades</th>
+               </tr>
+             </thead>
+             <tbody className={`divide-y ${isDarkMode ? 'divide-gray-700' : 'divide-gray-100'}`}>
+               {clientActivities.map(activity => (
+                 <tr key={activity.clientId} className={tableRowHover}>
+                   <td className="px-6 py-2 font-medium">{activity.clientName}</td>
+                   <td className="px-6 py-2 text-center">{activity.calls}</td>
+                   <td className="px-6 py-2 text-center">{activity.emails}</td>
+                   <td className="px-6 py-2 text-center">{activity.visits}</td>
+                   <td className="px-6 py-2 text-center">{activity.meetings}</td>
+                   <td className="px-6 py-2 text-right font-bold text-[#FFB800]">{activity.totalActivities}</td>
+                 </tr>
+               ))}
+             </tbody>
+           </table>
+        </div>
+      </div>
+
+      {/* NEW: Detalle Cobertura Cierres */}
+      <div className={`${cardClass} rounded-lg shadow-sm overflow-hidden`}>
+        <div className={`p-4 border-b flex justify-between items-center ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-100 bg-gray-50'}`}>
+          <div>
+            <h3 className="font-bold text-[#FFB800]">Detalle de Cobertura de Cierres</h3>
+            <p className="text-xs opacity-70">Oportunidades Generadas vs Ganadas (Facturadas)</p>
+          </div>
+          <div className="text-right">
+             <span className="text-2xl font-bold">{closingRate.toFixed(0)}%</span>
+             <span className="text-xs block opacity-70">Tasa Conversión Real</span>
+          </div>
+        </div>
+        <div className="overflow-x-auto max-h-64">
+           <table className="w-full text-sm text-left">
+             <thead className={`text-xs uppercase border-b sticky top-0 ${tableHeaderClass}`}>
+               <tr>
+                 <th className="px-6 py-3">ID Oportunidad</th>
+                 <th className="px-6 py-3">Cliente</th>
+                 <th className="px-6 py-3">Descripción</th>
+                 <th className="px-6 py-3 text-center">Estatus</th>
+                 <th className="px-6 py-3 text-right">Monto</th>
+                 <th className="px-6 py-3 text-right">Factura Asoc.</th>
+               </tr>
+             </thead>
+             <tbody className={`divide-y ${isDarkMode ? 'divide-gray-700' : 'divide-gray-100'}`}>
+               {opportunities.map(opp => (
+                 <tr key={opp.oppId} className={tableRowHover}>
+                   <td className="px-6 py-2 font-mono text-xs opacity-70">{opp.oppId}</td>
+                   <td className="px-6 py-2 font-medium">{opp.clientName}</td>
+                   <td className="px-6 py-2 text-xs">{opp.description}</td>
+                   <td className="px-6 py-2 text-center">
+                     <span className={`px-2 py-1 rounded text-xs font-bold ${
+                       opp.status === 'Won' ? 'bg-green-900 text-green-300' : 
+                       opp.status === 'Lost' ? 'bg-red-900 text-red-300' : 'bg-gray-700 text-gray-300'
+                     }`}>
+                       {opp.status}
+                     </span>
+                   </td>
+                   <td className="px-6 py-2 text-right">${opp.amount.toLocaleString()}</td>
+                   <td className="px-6 py-2 text-right font-mono text-[#FFB800]">
+                     {opp.invoiceNumber ? `#${opp.invoiceNumber}` : '-'}
+                   </td>
+                 </tr>
+               ))}
+             </tbody>
+           </table>
+        </div>
+      </div>
+
+      {/* Commission Breakdown Table */}
       <div className={`${cardClass} rounded-lg shadow-sm overflow-hidden`}>
         <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-100 bg-gray-50'}`}>
-          <h3 className="font-bold text-[#FFB800]">Escenarios de Ingresos (Detalle Desplegable)</h3>
+          <h3 className="font-bold text-[#FFB800]">Detalle de Comisiones (Tabla Maestra)</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className={`text-xs uppercase border-b ${tableHeaderClass}`}>
               <tr>
                 <th className="px-4 py-3 w-8"></th>
-                <th className="px-6 py-3">Línea de Negocio</th>
-                <th className="px-6 py-3 text-right">Ingreso Real</th>
-                <th className="px-6 py-3 text-right">Meta (Ref)</th>
-                <th className="px-6 py-3 text-center">% Comisión</th>
-                <th className="px-6 py-3 text-right">Ingreso Vendedor</th>
+                <th className="px-6 py-3">Línea</th>
+                <th className="px-6 py-3 text-right">Venta Real</th>
+                <th className="px-6 py-3 text-center">% Base</th>
+                <th className="px-6 py-3 text-right">Comisión Final</th>
               </tr>
             </thead>
             <tbody className={`divide-y ${isDarkMode ? 'divide-gray-700' : 'divide-gray-100'}`}>
@@ -272,9 +343,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, config, isDarkMode }
                     <td className="px-4 py-4 text-center">
                       {expandedLine === row.line ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     </td>
-                    <td className="px-6 py-4 font-medium">{row.line}</td>
+                    <td className="px-6 py-4 font-medium flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: LINE_COLORS[row.line as keyof typeof LINE_COLORS] }}></span>
+                      {row.line}
+                    </td>
                     <td className="px-6 py-4 text-right">${row.income.toLocaleString()}</td>
-                    <td className={`px-6 py-4 text-right ${subTextClass}`}>${row.target.toLocaleString()}</td>
                     <td className="px-6 py-4 text-center font-mono">{(row.rate * 100).toFixed(2)}%</td>
                     <td className="px-6 py-4 text-right font-bold text-[#FFB800]">
                       ${row.commission.toLocaleString()}
@@ -285,13 +358,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, config, isDarkMode }
                      <tr className={isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}>
                        <td colSpan={6} className="p-4">
                          <div className={`rounded border p-2 ${isDarkMode ? 'border-gray-700 bg-black' : 'border-gray-200 bg-white'}`}>
-                           <h4 className="text-xs font-bold uppercase mb-2 text-[#003366]">Detalle de Facturas: {row.line}</h4>
+                           <h4 className="text-xs font-bold uppercase mb-2 text-[#003366]">Detalle: {row.line}</h4>
                            <table className={`w-full text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                             <thead className="opacity-50 text-left">
+                             <thead>
                                <tr>
-                                 <th className="p-2">Factura</th>
-                                 <th className="p-2">Cliente</th>
-                                 <th className="p-2">Fecha</th>
+                                 <th className="p-2 text-left">Factura</th>
+                                 <th className="p-2 text-left">Cliente</th>
                                  <th className="p-2 text-right">Monto</th>
                                </tr>
                              </thead>
@@ -300,7 +372,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, config, isDarkMode }
                                  <tr key={inv.docNum} className={`border-t ${isDarkMode ? 'border-gray-800' : 'border-gray-100'}`}>
                                    <td className="p-2 font-mono">#{inv.docNum}</td>
                                    <td className="p-2">{inv.customerName}</td>
-                                   <td className="p-2">{inv.docDate}</td>
                                    <td className="p-2 text-right">${inv.docTotal.toLocaleString()}</td>
                                  </tr>
                                ))}
@@ -316,7 +387,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, config, isDarkMode }
                 <td className="px-4 py-4"></td>
                 <td className="px-6 py-4">TOTAL</td>
                 <td className="px-6 py-4 text-right">${currentTotalSales.toLocaleString()}</td>
-                <td className="px-6 py-4 text-right">-</td>
                 <td className="px-6 py-4 text-center">-</td>
                 <td className="px-6 py-4 text-right">${totalCommission.toLocaleString()}</td>
               </tr>

@@ -1,7 +1,7 @@
 export enum UserRole {
   SALES_REP = 'SALES_REP',
   MANAGER = 'MANAGER',
-  DIRECTOR = 'DIRECTOR' // Admin
+  DIRECTOR = 'DIRECTOR'
 }
 
 export interface User {
@@ -10,60 +10,80 @@ export interface User {
   role: UserRole;
   email: string;
   avatar: string;
-  territory?: string; // For Directors/Managers
-  managerId?: string; // For Reps
+  territory?: string;
+  managerId?: string;
 }
 
 export type BusinessLine = 
-  | 'Ventas' 
-  | 'Renta' 
-  | 'Mantenimiento' 
-  | 'Calibración' 
-  | 'Capacitación' 
-  | 'Supervisión' 
-  | 'Proyectos' 
-  | 'Otros';
+  | 'Ventas' | 'Renta' | 'Mantenimiento' | 'Calibración' 
+  | 'Capacitación' | 'Supervisión' | 'Proyectos' | 'Otros';
+
+export const LINE_COLORS: Record<BusinessLine, string> = {
+  'Ventas': '#3B82F6',        // Blue
+  'Renta': '#10B981',         // Emerald
+  'Mantenimiento': '#F59E0B', // Amber
+  'Calibración': '#EF4444',   // Red
+  'Capacitación': '#8B5CF6',  // Violet
+  'Supervisión': '#EC4899',   // Pink
+  'Proyectos': '#6366F1',     // Indigo
+  'Otros': '#9CA3AF'          // Gray
+};
+
+export interface FinancialScaleRow {
+  endAmount?: number;
+  commissionPercentage: number;
+}
+
+export interface CoverageScaleRow {
+  startPercentage: number;
+  endPercentage: number;
+  payoutFactor: number;
+}
+
+export interface BonusRule {
+  targetQty: number;
+  rewardAmount: number;
+  minPurchaseAmount: number;
+}
 
 export interface CommissionConfig {
-  // Logic Toggles (Renamed)
-  enablePortfolioCoverage: boolean; // Was isActive
-  enableConversionRate: boolean;    // Was enablePenalties
-  enableBonuses: boolean;
-
-  // Global Rules
-  globalTarget: number; 
-  floorPercentage: number; 
-  overFloorPercentage: number; // New: Sobre Piso
+  // 1. FINANCIAL TARGETS
+  globalTarget: number;
   
-  // Penalties / Scales 
-  scale90to100: number; 
-  scale80to89: number;  
-  scale70to79: number;  
-  scaleBelow70: number; 
+  positiveScales: [FinancialScaleRow, FinancialScaleRow, FinancialScaleRow, FinancialScaleRow];
+  negativeScales: [FinancialScaleRow, FinancialScaleRow, FinancialScaleRow, FinancialScaleRow];
 
-  // Specific Targets
-  minPortfolioCoverage: number; // Target % e.g. 90
-  minConversionRate: number;    // Target % e.g. 40
+  // 2. COVERAGES
+  enablePortfolioCoverage: boolean;
+  portfolioActivityTarget: number; 
+  portfolioScales: [CoverageScaleRow, CoverageScaleRow, CoverageScaleRow]; 
 
-  // Business Line Commission Rates & Targets
+  enableClosingCoverage: boolean;
+  closingPercentageTarget: number; 
+  closingScales: [CoverageScaleRow, CoverageScaleRow, CoverageScaleRow]; 
+
+  // 3. BONUSES (Granular)
+  enableBonusNewClient: boolean;
+  enableBonusRecovered: boolean;
+  enableBonusVolume: boolean;
+
+  bonusNewClient: BonusRule;
+  bonusRecoveredClient: BonusRule;
+  bonusVolumeClients: { // Renamed from bonusGoalNewClients
+    targetQty: number;
+    rewardAmount: number;
+    // Multiplier removed
+  };
+
+  // 4. BUSINESS LINES
   rates: Record<BusinessLine, number>;
   lineTargets: Record<BusinessLine, number>;
-
-  // Bonuses Configuration (Value and Reward)
-  bonusNewClientTarget: number; // e.g. 1 client
-  bonusNewClientReward: number; // e.g. $500
-  
-  bonusRecoveredTarget: number; // e.g. 1 client
-  bonusRecoveredReward: number; // e.g. $500
-  
-  bonusGoalNewClientsTarget: number; // e.g. 5 clients
-  bonusGoalNewClientsReward: number; // e.g. $1500
 }
 
 export interface Invoice {
   docNum: number;
   customerName: string;
-  docDate: string; // ISO Date
+  docDate: string;
   docTotal: number;
   currency: string;
   isPaid: boolean; 
@@ -80,21 +100,16 @@ export interface Invoice {
 export interface CommissionRecord extends Invoice {
   baseDate: string;
   paymentDate: string;
-  baseCommissionAmount: number; // Before penalty
-  finalCommissionAmount: number; // After penalty
+  baseCommissionAmount: number; 
+  finalCommissionAmount: number;
   appliedRate: number;
-  penaltyFactor: number; // 1.0, 0.8, 0.7 or 0
+  
+  financialFactor: number;
+  portfolioFactor: number;
+  closingFactor: number;
+  
+  penaltyFactor: number;
   status: 'Pending' | 'Approved' | 'Paid';
-}
-
-export interface KpiData {
-  salesTarget: number;
-  currentSales: number;
-  visitCoverage: number; // Percentage
-  closingRate: number; 
-  lastYearSales: number;
-  projectedCommission: number;
-  achievementRate: number; // % of target reached
 }
 
 export interface FilterState {
@@ -103,6 +118,26 @@ export interface FilterState {
   selectedTerritory: string | 'ALL';
   selectedManager: string | 'ALL';
   selectedRep: string | 'ALL';
+}
+
+// Mock Data Interfaces for New Dashboard Tables
+export interface ClientActivity {
+  clientId: string;
+  clientName: string;
+  calls: number;
+  emails: number;
+  visits: number;
+  meetings: number;
+  totalActivities: number;
+}
+
+export interface OpportunityData {
+  oppId: string;
+  clientName: string;
+  description: string;
+  status: 'Won' | 'Lost' | 'Open';
+  invoiceNumber?: number; // Linked if won
+  amount: number;
 }
 
 export interface MonthlyHistory {

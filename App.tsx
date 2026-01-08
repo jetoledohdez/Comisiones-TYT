@@ -6,7 +6,7 @@ import { ReportsPanel } from './components/ReportsPanel';
 import { User, UserRole, CommissionConfig } from './types';
 import { MOCK_HIERARCHY } from './services/mockSapService';
 
-// Default Mock User - Aligned with Mock Service Data (d1)
+// Default Mock User
 const INITIAL_USER: User = {
   id: 'd1',
   name: 'Carlos Director',
@@ -16,23 +16,51 @@ const INITIAL_USER: User = {
   territory: 'Global'
 };
 
-// Initial Config based on PDF
+// Initial Config based on NEW SPEC
 const INITIAL_CONFIG: CommissionConfig = {
-  enablePortfolioCoverage: true,
-  enableConversionRate: true,
-  enableBonuses: true,
-
   globalTarget: 700000,
-  floorPercentage: 70,
-  overFloorPercentage: 110, // Default Stretch
-  scale90to100: 1.0, 
-  scale80to89: 0.80, 
-  scale70to79: 0.70, 
-  scaleBelow70: 0.0, 
 
-  minPortfolioCoverage: 90,
-  minConversionRate: 40,
+  // 1. Scales
+  positiveScales: [
+    { endAmount: 750000, commissionPercentage: 105 },
+    { endAmount: 850000, commissionPercentage: 110 },
+    { endAmount: 1000000, commissionPercentage: 115 },
+    { endAmount: undefined, commissionPercentage: 120 }
+  ],
+  negativeScales: [
+    { endAmount: 600000, commissionPercentage: 90 },
+    { endAmount: 500000, commissionPercentage: 80 },
+    { endAmount: 400000, commissionPercentage: 70 },
+    { endAmount: undefined, commissionPercentage: 50 }
+  ],
+
+  // 2. Coverages
+  enablePortfolioCoverage: true,
+  portfolioActivityTarget: 20, // 20 Clients
+  portfolioScales: [
+    { startPercentage: 90, endPercentage: 100, payoutFactor: 1.0 },
+    { startPercentage: 80, endPercentage: 89, payoutFactor: 0.9 },
+    { startPercentage: 0, endPercentage: 79, payoutFactor: 0.8 }
+  ],
+
+  enableClosingCoverage: true,
+  closingPercentageTarget: 30, // 30% closing rate
+  closingScales: [
+    { startPercentage: 90, endPercentage: 100, payoutFactor: 1.0 },
+    { startPercentage: 80, endPercentage: 89, payoutFactor: 0.9 },
+    { startPercentage: 0, endPercentage: 79, payoutFactor: 0.8 }
+  ],
+
+  // 3. Bonuses (Granular)
+  enableBonusNewClient: true,
+  enableBonusRecovered: true,
+  enableBonusVolume: true,
+
+  bonusNewClient: { targetQty: 2, rewardAmount: 500, minPurchaseAmount: 5000 },
+  bonusRecoveredClient: { targetQty: 2, rewardAmount: 500, minPurchaseAmount: 5000 },
+  bonusVolumeClients: { targetQty: 5, rewardAmount: 1500 }, // Renamed & removed multiplier
   
+  // 4. Base Rates
   rates: {
     'Ventas': 0.015,         
     'Renta': 0.02,           
@@ -53,14 +81,7 @@ const INITIAL_CONFIG: CommissionConfig = {
     'Supervisión': 40000,
     'Proyectos': 30000,
     'Otros': 0
-  },
-
-  bonusNewClientTarget: 1,
-  bonusNewClientReward: 500,
-  bonusRecoveredTarget: 1,
-  bonusRecoveredReward: 500,
-  bonusGoalNewClientsTarget: 5,
-  bonusGoalNewClientsReward: 1500
+  }
 };
 
 const App: React.FC = () => {
